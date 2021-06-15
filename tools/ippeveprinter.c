@@ -6317,6 +6317,18 @@ process_http(ippeve_client_t *client)	/* I - Client connection */
 }
 
 
+static int
+is_bad_resource(char* resource)
+{
+  if (!strncmp(resource, "/ipp/print/", 11)) {
+    const char* username = &resource[11];
+    return strcmp(username, "foo") && strcmp(username, "bar") && strcmp(username, "zzz");
+
+  }
+  return 1;
+}
+
+
 /*
  * 'process_ipp()' - Process an IPP request.
  */
@@ -6479,7 +6491,7 @@ process_ipp(ippeve_client_t *client)	/* I - Client */
         else if ((!strcmp(name, "job-uri") &&
                   strncmp(resource, "/ipp/print/", 11)) ||
                  (!strcmp(name, "printer-uri") &&
-                  strcmp(resource, "/ipp/print") &&
+                  is_bad_resource(resource) &&
                   (strcmp(resource, "/") || ippGetOperation(client->request) != IPP_OP_GET_PRINTER_ATTRIBUTES)))
 	  respond_ipp(client, IPP_STATUS_ERROR_NOT_FOUND, "%s %s not found.",
 		      name, ippGetString(uri, 0, NULL));
