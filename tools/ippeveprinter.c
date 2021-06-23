@@ -384,6 +384,7 @@ main(int  argc,				/* I - Number of command-line args */
 		*make = "Example",	/* Manufacturer */
 		*model = "Printer",	/* Model */
 		*name = NULL,		/* Printer name */
+    *username_verification_url = NULL, /* Username verification URL, must be provided */
 #if !CUPS_LITE
 		*ppdfile = NULL,	/* PPD file */
 #endif /* !CUPS_LITE */
@@ -612,6 +613,13 @@ main(int  argc,				/* I - Number of command-line args */
 
 	      legacy = 1;
 	      break;
+	  case 'u' : /* -u an http endpoint */
+	      i ++;
+	      if (i >= argc)
+	        usage(1);
+
+	      username_verification_url = argv[i];
+	      break;
 
 	  case 'v' : /* -v (be verbose) */
 	      Verbosity ++;
@@ -636,6 +644,14 @@ main(int  argc,				/* I - Number of command-line args */
 
   if (!name)
     usage(1);
+
+  if (!username_verification_url) {
+    _cupsLangPuts(stdout, "Username verification URL not given");
+    usage(1);
+  } else {
+    _cupsLangPrintf(stdout, "Username verfication URL: %s", username_verification_url);
+  }
+
 
 #if CUPS_LITE
   if (attrfile != NULL && legacy)
@@ -8402,6 +8418,7 @@ usage(int status)			/* O - Exit status */
   _cupsLangPuts(stdout, _("-p port                 Set port number for printer"));
   _cupsLangPuts(stdout, _("-r subtype,[subtype]    Set DNS-SD service subtype"));
   _cupsLangPuts(stdout, _("-s speed[,color-speed]  Set speed in pages per minute"));
+  _cupsLangPuts(stdout, _("-u an http endpoint     Set username verification url"));
   _cupsLangPuts(stdout, _("-v                      Be verbose"));
 
   exit(status);
