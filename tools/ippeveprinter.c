@@ -361,6 +361,7 @@ static int		KeepFiles = 0,	/* Keep spooled job files? */
 static const char	*PAMService = NULL;
 					/* PAM service */
 
+static const char *USERNAME_VERIFICATION_URL = NULL; /* Username verification URL, must be provided */
 
 /*
  * 'main()' - Main entry to the sample server.
@@ -384,7 +385,6 @@ main(int  argc,				/* I - Number of command-line args */
 		*make = "Example",	/* Manufacturer */
 		*model = "Printer",	/* Model */
 		*name = NULL,		/* Printer name */
-    *username_verification_url = NULL, /* Username verification URL, must be provided */
 #if !CUPS_LITE
 		*ppdfile = NULL,	/* PPD file */
 #endif /* !CUPS_LITE */
@@ -618,7 +618,7 @@ main(int  argc,				/* I - Number of command-line args */
 	      if (i >= argc)
 	        usage(1);
 
-	      username_verification_url = argv[i];
+	      USERNAME_VERIFICATION_URL = argv[i];
 	      break;
 
 	  case 'v' : /* -v (be verbose) */
@@ -645,11 +645,11 @@ main(int  argc,				/* I - Number of command-line args */
   if (!name)
     usage(1);
 
-  if (!username_verification_url) {
+  if (!USERNAME_VERIFICATION_URL) {
     _cupsLangPuts(stdout, "Username verification URL not given");
     usage(1);
   } else {
-    _cupsLangPrintf(stdout, "Username verfication URL: %s", username_verification_url);
+    _cupsLangPrintf(stdout, "Username verfication URL: %s", USERNAME_VERIFICATION_URL);
   }
 
 
