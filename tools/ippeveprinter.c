@@ -82,6 +82,8 @@ extern char **environ;
 #include "printer-lg-png.h"
 #include "printer-sm-png.h"
 
+#include <curl/curl.h>
+
 
 /*
  * Constants...
@@ -294,6 +296,7 @@ static void		dnssd_client_cb(AvahiClient *c, AvahiClientState state, void *userd
 static void		dnssd_init(void);
 static int		filter_cb(ippeve_filter_t *filter, ipp_t *dst, ipp_attribute_t *attr);
 static ippeve_job_t	*find_job(ippeve_client_t *client);
+static void		invoke_print_job_webhook(ippeve_client_t *client, ippeve_job_t *job);
 static void		finish_document_data(ippeve_client_t *client, ippeve_job_t *job);
 static void		finish_document_uri(ippeve_client_t *client, ippeve_job_t *job);
 static void		flush_document_data(ippeve_client_t *client);
@@ -365,6 +368,8 @@ static const char	*PAMService = NULL;
 static const char *USERNAME_VERIFICATION_URL = NULL; /* Username verification URL, must be provided */
 
 static const char *USERNAME_QUERY_ARG = "?username=";
+
+static const char *PRINT_JOB_WEBHOOK_URL = NULL; /* Print job webhook URL, must be provided */
 
 /*
  * 'main()' - Main entry to the sample server.
@@ -624,6 +629,14 @@ main(int  argc,				/* I - Number of command-line args */
 	      USERNAME_VERIFICATION_URL = argv[i];
 	      break;
 
+	  case 'w' : /* -w an http endpoint */
+	      i ++;
+	      if (i >= argc)
+	        usage(1);
+
+	      PRINT_JOB_WEBHOOK_URL = argv[i];
+	      break;
+
 	  case 'v' : /* -v (be verbose) */
 	      Verbosity ++;
 	      break;
@@ -654,6 +667,13 @@ main(int  argc,				/* I - Number of command-line args */
   } else {
     _cupsLangPrintf(stdout, "Username verfication URL: %s", USERNAME_VERIFICATION_URL);
   }
+
+  if (!PRINT_JOB_WEBHOOK_URL) {
+    _cupsLangPuts(stdout, "Print job webhook URL not given");
+    usage(1);
+  } else {
+    _cupsLangPrintf(stdout, "Print job webhook URL: %s", PRINT_JOB_WEBHOOK_URL);
+  }  
 
   // _cupsLangPrintf(stdout, "Username verification result on test user \"foo\": %s", is_bad_resource("/ipp/print/foo")?"false":"true");
 
@@ -2393,6 +2413,58 @@ find_job(ippeve_client_t *client)		/* I - Client */
   return (job);
 }
 
+/* Send print job attributes and document to webhook*/
+static void		
+invoke_print_job_webhook(ippeve_client_t *client, ippeve_job_t *job) {
+  CURL *curl;
+  CURLcode res;
+ 
+  curl_mime *form = NULL;
+  curl_mimepart *field = NULL;
+  struct curl_slist *headerlist = NULL;
+ 
+  curl_global_init(CURL_GLOBAL_ALL);
+ 
+  curl = curl_easy_init();
+  if(curl) {
+    /* Create the form */
+    form = curl_mime_init(curl);
+ 
+    /* Fill in the file upload field */
+    field = curl_mime_addpart(form);
+    curl_mime_name(field, "document");
+    curl_mime_type(field, job->format);
+    curl_mime_filedata(field, job->filename);
+ 
+    /* Fill in the filename field */
+    field = curl_mime_addpart(form);
+    curl_mime_name(field, "some-attribute");
+    const char* attribute_value = "some-value";
+    curl_mime_data(field, attribute_value, sizeof(attribute_value));
+
+ 
+    /* initialize custom header list (stating that Expect: 100-continue is not
+       wanted */
+    /* what URL that receives this POST */
+    curl_easy_setopt(curl, CURLOPT_URL, PRINT_JOB_WEBHOOK_URL);
+    curl_easy_setopt(curl, CURLOPT_MIMEPOST, form);
+ 
+    /* Perform the request, res will get the return code */
+    res = curl_easy_perform(curl);
+    /* Check for errors */
+    if(res != CURLE_OK)
+      fprintf(stderr, "curl_easy_perform() failed: %s\n",
+              curl_easy_strerror(res));
+ 
+    /* always cleanup */
+    curl_easy_cleanup(curl);
+ 
+    /* then cleanup the form */
+    curl_mime_free(form);
+    /* free slist */
+    curl_slist_free_all(headerlist);
+  }
+}
 
 /*
  * 'finish_document()' - Finish receiving a document file and start processing.
@@ -8469,6 +8541,7 @@ usage(int status)			/* O - Exit status */
   _cupsLangPuts(stdout, _("-r subtype,[subtype]    Set DNS-SD service subtype"));
   _cupsLangPuts(stdout, _("-s speed[,color-speed]  Set speed in pages per minute"));
   _cupsLangPuts(stdout, _("-u an http endpoint     Set username verification url"));
+  _cupsLangPuts(stdout, _("-w an http endpoint     Set print job webhook url"));
   _cupsLangPuts(stdout, _("-v                      Be verbose"));
 
   exit(status);
