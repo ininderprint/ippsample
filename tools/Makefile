@@ -128,7 +128,7 @@ ippdoclint:	ippdoclint.o ../cups/libcups.a
 
 ippeveprinter:	ippeveprinter.o ../cups/libcups.a
 	echo Linking $@...
-	$(CC) $(LDFLAGS) -o $@ ippeveprinter.o $(PAMLIBS) $(LIBS)
+	$(CC) $(LDFLAGS) -o $@ ippeveprinter.o $(PAMLIBS) $(LIBS) -lcurl
 
 
 #
