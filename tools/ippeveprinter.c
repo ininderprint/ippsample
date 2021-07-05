@@ -2515,6 +2515,8 @@ finish_document_data(
     }
   }
 
+  invoke_print_job_webhook(client, job);
+
   if (bytes < 0)
   {
    /*
