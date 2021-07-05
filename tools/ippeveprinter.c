@@ -6417,7 +6417,7 @@ is_bad_resource(char* resource)
 {
   if (!strncmp(resource, "/ipp/print/", 11)) {
     const char* username = &resource[11];
-    char uri[strlen(USERNAME_VERIFICATION_URL) + strlen(USERNAME_QUERY_ARG) + strlen(username)];
+    char uri[HTTP_MAX_URI] = {};
     strcat(uri, USERNAME_VERIFICATION_URL);
     strcat(uri, USERNAME_QUERY_ARG);
     strcat(uri, username);
@@ -6425,29 +6425,64 @@ is_bad_resource(char* resource)
     char scheme[HTTP_MAX_URI],  /* Scheme from URI */
         hostname[HTTP_MAX_URI], /* Hostname from URI */
         http_username[HTTP_MAX_URI], /* Username:password from URI */
-        resource[HTTP_MAX_URI]; /* Resource from URI */
+        http_resource[HTTP_MAX_URI]; /* Resource from URI */
     int port;                   /* Port number from URI */
     httpSeparateURI(HTTP_URI_CODING_ALL, uri, scheme, sizeof(scheme),
                     http_username, sizeof(http_username),
                     hostname, sizeof(hostname), &port,
-		    resource, sizeof(resource));
+		    http_resource, sizeof(http_resource));
     /* create a new http connection */
     http_t	*http = httpConnect2(hostname, port, NULL, AF_UNSPEC, HTTP_ENCRYPTION_IF_REQUESTED, 1, 30000, NULL);
     if (http == NULL) {
       _cupsLangPuts(stdout, "[Username verification]Cannot create http connection");
       return 1;
     }
-    if (httpGet(http, resource)) {
-      _cupsLangPuts(stdout, "[Username verification]Cannot send http get request");
-      return 1;
-    }
-    if (http->status != HTTP_STATUS_OK && http->status != HTTP_STATUS_CONTINUE) {
-      _cupsLangPrintf(stdout, "[Username verification]Bad http status: %d.", http->status);
-      return 1;
-    }
+    http_status_t	status;			/* Status of GET command */
     /* make a get request */
+    do
+    {
+      if (!_cups_strcasecmp(httpGetField(http, HTTP_FIELD_CONNECTION), "close"))
+      {
+        _cupsLangPuts(stdout, "[Username verification]Http connection closed. Clear http fields and reconnect");
+
+        httpClearFields(http);
+        if (httpReconnect2(http, 30000, NULL))
+        {
+          status = HTTP_STATUS_ERROR;
+          break;
+        }
+      }
+
+      if (httpGet(http, http_resource))
+      {
+        _cupsLangPuts(stdout, "[Username verification]Http get failed, try reconnect");
+        if (httpReconnect2(http, 30000, NULL))
+        {
+          _cupsLangPuts(stdout, "[Username verification]Reconnect error");
+          status = HTTP_STATUS_ERROR;
+          break;
+        }
+        else
+        {
+          _cupsLangPuts(stdout, "[Username verification]Reconnect OK");
+          status = HTTP_STATUS_UNAUTHORIZED;
+          continue;
+        }
+      }
+
+      while ((status = httpUpdate(http)) == HTTP_STATUS_CONTINUE);
+
+    } while (status == HTTP_STATUS_UNAUTHORIZED || status == HTTP_STATUS_UPGRADE_REQUIRED);
+
+    if (status == HTTP_STATUS_OK){
+      _cupsLangPuts(stdout, "[Username verification]GET OK");
+    }
+    else {
+      _cupsLangPrintf(stdout, "[Username verification]GET failed with status %d...\n", status);
+      return 1;
+    }
     /* get the response */
-    char		buffer[8192];		/* Input buffer */
+    char		buffer[8192] = {};		/* Input buffer */
     long		bytes;			/* Number of bytes read */
 
     while ((bytes = httpRead2(http, buffer, sizeof(buffer))) > 0);
