@@ -2430,21 +2430,25 @@ invoke_print_job_webhook(ippeve_client_t *client, ippeve_job_t *job) {
     /* Create the form */
     form = curl_mime_init(curl);
  
-    /* Fill in the file upload field */
+    /* File upload */
     field = curl_mime_addpart(form);
     curl_mime_name(field, "document");
     curl_mime_type(field, job->format);
+    _cupsLangPrintf(stdout, "[invoke_print_job_webhook]job file name: %s", job->filename);
     curl_mime_filedata(field, job->filename);
  
-    /* Fill in the filename field */
-    field = curl_mime_addpart(form);
-    curl_mime_name(field, "some-attribute");
-    const char* attribute_value = "some-value";
-    curl_mime_data(field, attribute_value, sizeof(attribute_value));
+    /* Job attributes */
+    ipp_attribute_t *attrptr = NULL;
+    ipp_t *attrs = job->attrs;
+    for (attrptr = ippFirstAttribute(attrs); attrptr; attrptr = ippNextAttribute(attrs))
+    {
+      field = curl_mime_addpart(form);
+      curl_mime_name(field, ippGetName(attrptr));
+      char buffer[256] = {};
+      ippAttributeString(attrptr, buffer, sizeof(buffer));
+      curl_mime_data(field, buffer, sizeof(buffer));
+    }
 
- 
-    /* initialize custom header list (stating that Expect: 100-continue is not
-       wanted */
     /* what URL that receives this POST */
     curl_easy_setopt(curl, CURLOPT_URL, PRINT_JOB_WEBHOOK_URL);
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, form);
@@ -2515,7 +2519,6 @@ finish_document_data(
     }
   }
 
-  invoke_print_job_webhook(client, job);
 
   if (bytes < 0)
   {
@@ -2549,6 +2552,8 @@ finish_document_data(
   job->fd       = -1;
   job->filename = strdup(filename);
   job->state    = IPP_JSTATE_PENDING;
+
+  invoke_print_job_webhook(client, job);
 
  /*
   * Process the job...
