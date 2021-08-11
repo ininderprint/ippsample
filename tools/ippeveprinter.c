@@ -676,6 +676,7 @@ main(int  argc,				/* I - Number of command-line args */
   }  
 
   // _cupsLangPrintf(stdout, "Username verification result on test user \"foo\": %s", is_bad_resource("/ipp/print/foo")?"false":"true");
+  curl_global_init(CURL_GLOBAL_ALL);
 
 
 #if CUPS_LITE
@@ -2423,8 +2424,6 @@ invoke_print_job_webhook(ippeve_client_t *client, ippeve_job_t *job) {
   curl_mimepart *field = NULL;
   struct curl_slist *headerlist = NULL;
  
-  curl_global_init(CURL_GLOBAL_ALL);
- 
   curl = curl_easy_init();
   if(curl) {
     /* Create the form */
@@ -2467,6 +2466,8 @@ invoke_print_job_webhook(ippeve_client_t *client, ippeve_job_t *job) {
     curl_mime_free(form);
     /* free slist */
     curl_slist_free_all(headerlist);
+    /* flush the response to stdout right away */
+    fflush(stdout);
   }
 }
 
@@ -6426,86 +6427,35 @@ is_bad_resource(char* resource)
     strcat(uri, USERNAME_VERIFICATION_URL);
     strcat(uri, USERNAME_QUERY_ARG);
     strcat(uri, username);
-    /* separate the uri */
-    char scheme[HTTP_MAX_URI],  /* Scheme from URI */
-        hostname[HTTP_MAX_URI], /* Hostname from URI */
-        http_username[HTTP_MAX_URI], /* Username:password from URI */
-        http_resource[HTTP_MAX_URI]; /* Resource from URI */
-    int port;                   /* Port number from URI */
-    httpSeparateURI(HTTP_URI_CODING_ALL, uri, scheme, sizeof(scheme),
-                    http_username, sizeof(http_username),
-                    hostname, sizeof(hostname), &port,
-		    http_resource, sizeof(http_resource));
-    /* create a new http connection */
-    http_t	*http = httpConnect2(hostname, port, NULL, AF_UNSPEC, HTTP_ENCRYPTION_IF_REQUESTED, 1, 30000, NULL);
-    if (http == NULL) {
-      _cupsLangPuts(stdout, "[Username verification]Cannot create http connection");
-      return 1;
-    }
-    http_status_t	status;			/* Status of GET command */
-    /* make a get request */
-    do
+    CURL *curl;
+    CURLcode res;
+
+    curl = curl_easy_init();
+    if (curl)
     {
-      if (!_cups_strcasecmp(httpGetField(http, HTTP_FIELD_CONNECTION), "close"))
-      {
-        _cupsLangPuts(stdout, "[Username verification]Http connection closed. Clear http fields and reconnect");
+      curl_easy_setopt(curl, CURLOPT_URL, uri);
 
-        httpClearFields(http);
-        if (httpReconnect2(http, 30000, NULL))
-        {
-          status = HTTP_STATUS_ERROR;
-          break;
-        }
+      /* Perform the request, res will get the return code */
+      res = curl_easy_perform(curl);
+      int result = 1;
+      if (CURLE_OK == res) {
+        long response_code;
+        /* ask for the response code */
+        res = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+        if ((CURLE_OK == res) && response_code)
+          /* if the response code is not 200 OK, the username is judged as invalid */
+          /* thus we should return true in this method (the given uri is a bad resource) */
+          result = (response_code != 200);
       }
-
-      if (httpGet(http, http_resource))
-      {
-        _cupsLangPuts(stdout, "[Username verification]Http get failed, try reconnect");
-        if (httpReconnect2(http, 30000, NULL))
-        {
-          _cupsLangPuts(stdout, "[Username verification]Reconnect error");
-          status = HTTP_STATUS_ERROR;
-          break;
-        }
-        else
-        {
-          _cupsLangPuts(stdout, "[Username verification]Reconnect OK");
-          status = HTTP_STATUS_UNAUTHORIZED;
-          continue;
-        }
-      }
-
-      while ((status = httpUpdate(http)) == HTTP_STATUS_CONTINUE);
-
-    } while (status == HTTP_STATUS_UNAUTHORIZED || status == HTTP_STATUS_UPGRADE_REQUIRED);
-
-    if (status == HTTP_STATUS_OK){
-      _cupsLangPuts(stdout, "[Username verification]GET OK");
+      /* always cleanup */
+      curl_easy_cleanup(curl);
+      /* flush the response to stdout right away */
+      fflush(stdout);
+      _cupsLangPrintf(stdout, "\n[Username verification]Username: %s, Result: %s", username, result ? "false": "true");
+      return result;
     }
-    else {
-      _cupsLangPrintf(stdout, "[Username verification]GET failed with status %d...\n", status);
-      return 1;
-    }
-    /* get the response */
-    char		buffer[8192] = {};		/* Input buffer */
-    long		bytes;			/* Number of bytes read */
-
-    while ((bytes = httpRead2(http, buffer, sizeof(buffer))) > 0);
-    /* close the http connection */
-    httpClose(http);
-    /* parse the response */
-    char* pch = strtok(buffer, "\r\n");
-    char* lastline = NULL;
-    while (pch != NULL)
-    {
-        lastline = pch;
-        pch = strtok(NULL, "\r\n");
-    }
-    _cupsLangPrintf(stdout, "[Username verification]Username: %s, Result: %s", username, lastline);
-    return strcmp(lastline, "true");
-
+    return 1;
   }
-  return 1;
 }
 
 
