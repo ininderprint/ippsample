@@ -83,6 +83,8 @@ extern char **environ;
 #include "printer-sm-png.h"
 
 #include <curl/curl.h>
+#include "uthash.h"
+#include <sys/time.h>
 
 
 /*
@@ -370,6 +372,40 @@ static const char *USERNAME_VERIFICATION_URL = NULL; /* Username verification UR
 static const char *USERNAME_QUERY_ARG = "?username=";
 
 static const char *PRINT_JOB_WEBHOOK_URL = NULL; /* Print job webhook URL, must be provided */
+
+typedef struct username_ttl_s {
+    char username[32]; /* we'll use this field as the key */
+    long ttl; /* time to live */
+    UT_hash_handle hh; /* makes this structure hashable */
+}username_ttl;
+
+static username_ttl *find_username(char* username);
+static void add_username(username_ttl *user);
+static void delete_username(username_ttl *user);
+static long get_current_timestamp();
+
+username_ttl *users = NULL;
+
+username_ttl *find_username(char* name) {
+    username_ttl *s;
+    HASH_FIND_STR(users, name, s);
+    return s;
+}
+
+void add_username(username_ttl *user) {
+  HASH_ADD_STR(users, username, user);
+}
+
+void delete_username(username_ttl *user) {
+  HASH_DEL(users, user);
+}
+
+long get_current_timestamp() {
+  struct timeval timestamp;
+  gettimeofday(&timestamp, NULL);
+  return timestamp.tv_sec;
+}
+
 
 /*
  * 'main()' - Main entry to the sample server.
@@ -6423,6 +6459,20 @@ is_bad_resource(char* resource)
 {
   if (!strncmp(resource, "/ipp/print/", 11)) {
     const char* username = &resource[11];
+    char username_copy[32];
+    strcpy(username_copy, username);
+    username_ttl* ut = find_username(username_copy);
+    if (ut != NULL ) {
+      long now = get_current_timestamp();
+      if(ut->ttl >= now) {
+        _cupsLangPrintf(stdout, "username=%s is valid in cache", username);
+        fflush(stdout);
+        return 0;
+      } else {
+        _cupsLangPrintf(stdout, "username=%s is removed from cache", username);
+        delete_username(ut);
+      }
+    }
     char uri[HTTP_MAX_URI] = {};
     strcat(uri, USERNAME_VERIFICATION_URL);
     strcat(uri, USERNAME_QUERY_ARG);
@@ -6452,6 +6502,14 @@ is_bad_resource(char* resource)
       /* flush the response to stdout right away */
       fflush(stdout);
       _cupsLangPrintf(stdout, "\n[Username verification]Username: %s, Result: %s", username, result ? "false": "true");
+      if (!result)
+      {
+        username_ttl* ut = malloc(sizeof(username_ttl));
+        ut->ttl = get_current_timestamp() + 120;
+        strcpy(ut->username, username);
+        add_username(ut);
+        _cupsLangPrintf(stdout, "username=%s put into cache", username);
+      }
       return result;
     }
     return 1;
