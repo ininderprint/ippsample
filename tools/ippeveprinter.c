@@ -374,7 +374,7 @@ static const char *USERNAME_QUERY_ARG = "?username=";
 static const char *PRINT_JOB_WEBHOOK_URL = NULL; /* Print job webhook URL, must be provided */
 
 typedef struct username_ttl_s {
-    char username[32]; /* we'll use this field as the key */
+    char username[64]; /* we'll use this field as the key */
     long ttl; /* time to live */
     UT_hash_handle hh; /* makes this structure hashable */
 }username_ttl;
@@ -6459,7 +6459,7 @@ is_bad_resource(char* resource)
 {
   if (!strncmp(resource, "/ipp/print/", 11)) {
     const char* username = &resource[11];
-    char username_copy[32];
+    char username_copy[64];
     strcpy(username_copy, username);
     username_ttl* ut = find_username(username_copy);
     if (ut != NULL ) {
