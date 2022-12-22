@@ -373,8 +373,11 @@ static const char *USERNAME_QUERY_ARG = "?username=";
 
 static const char *PRINT_JOB_WEBHOOK_URL = NULL; /* Print job webhook URL, must be provided */
 
+/* the username from ipp server is UUID V4 which will be 36 characters, defining it as 64 should be enough */
+#define MAX_USERNAME_LEN 64
+
 typedef struct username_ttl_s {
-    char username[64]; /* we'll use this field as the key */
+    char username[MAX_USERNAME_LEN]; /* we'll use this field as the key */
     long ttl; /* time to live */
     UT_hash_handle hh; /* makes this structure hashable */
 }username_ttl;
@@ -6459,7 +6462,7 @@ is_bad_resource(char* resource)
 {
   if (!strncmp(resource, "/ipp/print/", 11)) {
     const char* username = &resource[11];
-    char username_copy[64];
+    char username_copy[MAX_USERNAME_LEN];
     strcpy(username_copy, username);
     username_ttl* ut = find_username(username_copy);
     if (ut != NULL ) {
